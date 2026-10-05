@@ -1166,13 +1166,15 @@ function indoDate(value){
 }
 function isTechnicianOnlyLine(line){
   // Baris nama teknisi saja: pendek, tanpa OH/SLOT/tanggal/nomor WA
-  const s=String(line||'').trim();
+  // termasuk "*NAMA TEKNISI*" dari export
+  const s=String(line||'').trim().replace(/^\*+|\*+$/g,'').trim();
   if(!s||s.length>60) return false;
   if(/OH\d+/i.test(s)) return false;
   if(/SLOT\s*-?\s*\d+/i.test(s)) return false;
+  if(/ANYTIME/i.test(s) && /OH\d+/i.test(String(line||''))) return false;
   if(/\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) return false;
   if(/(?:62|08)\d{8,13}/.test(s)) return false;
-  return /^[A-Za-zÀ-ÿ.'\-\s]+$/.test(s) && s.split(/\s+/).length<=5;
+  return /^[A-Za-zÀ-ÿ.'\-\s]+$/.test(s) && s.split(/\s+/).length<=6;
 }
 function looksLikeFlatWO(line){
   const s=String(line||'');
@@ -1229,15 +1231,37 @@ function makeMessage(a){
   const parts=Array.isArray(a)?a.map(clean):[clean(a)];
   const joined=parts.join(' ').replace(/\s+/g,' ').trim();
   const isFlat=parts.length<10;
-  // Format export sistem (tab): OH di kolom 1, nama di kolom 6, ID di kolom 5, phone "62...|..."
+
+  // Format export sistem (INSTALLATION / phone| / slot-n / tanggal ISO) → template HiFriend lama
   const isSystemExport=!isFlat && /^OH\d+/i.test(parts[1]||'') && parts.length>=14 && (
-    /INSTALLATION/i.test(joined) || /\|/.test(parts[8]||'') || /^slot-?\d+/i.test(parts[14]||'') || /^\d{4}-\d{2}-\d{2}/.test(parts[13]||'')
+    /INSTALLATION/i.test(joined) ||
+    (/\|/.test(parts[8]||'') && /(?:62|08)\d{8,}/.test(parts[8]||'')) ||
+    /^slot-?\d+\s*[-–]/i.test(parts[14]||'') ||
+    /^\d{4}-\d{2}-\d{2}/.test(parts[13]||'')
+  );
+
+  // Format HiFi/Seahawks/SVM (baris panjang ATAU tab) → template baru (Selamat …)
+  // Ciri: ada OH + HiFi Mbps + (SLOT - n (…) / ANYTIME / SVM_ / Seahawks)
+  // dan BUKAN export INSTALLATION
+  const isNewStyle=!isSystemExport && /OH\d{8,}/i.test(joined) && /HiFi\s*\d+\s*Mbps/i.test(joined) && (
+    /SLOT\s*-\s*\d+\s*\(/i.test(joined) ||
+    /\bANYTIME\b/i.test(joined) ||
+    /\bSVM_[A-Z0-9_]+/i.test(joined) ||
+    /\bSeahawks\b/i.test(joined)
   );
 
   // ----- NAMA -----
   let name='';
   if(isSystemExport){
-    name=parts[6]||parts[7]||'';
+    name=parts[6]||'';
+  }else if(isNewStyle){
+    // Tab: [id, OH, NAMA, HiFi…] | Flat: antara OH dan HiFi
+    if(!isFlat && /^OH\d+/i.test(parts[1]||'') && parts[2] && !/^HiFi/i.test(parts[2])){
+      name=parts[2].trim();
+    }else{
+      const mName=joined.match(/OH\d+\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{2,60}?)\s+HiFi/i);
+      if(mName) name=mName[1].replace(/\s+/g,' ').trim();
+    }
   }else if(!isFlat && parts[1] && !/^OH\d/i.test(parts[1]) && !/^\d{6,}$/.test(parts[1])){
     name=parts[1];
   }
@@ -1245,19 +1269,11 @@ function makeMessage(a){
     const mName=joined.match(/OH\d+\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{2,60}?)\s+HiFi/i);
     if(mName) name=mName[1].replace(/\s+/g,' ').trim();
   }
-  if(!name && !isFlat && !isSystemExport) name=parts[1]||'';
-  if(!name && isSystemExport){
-    // cari nama: teks huruf di dekat ID numerik
-    for(let i=0;i<parts.length;i++){
-      if(/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{5,60}$/.test(parts[i]) && !/INSTALLATION|INDOSAT|INTERNET|SYSTEM|CHANGE|TEAM|PERUMAHAN|JALAN/i.test(parts[i])){
-        name=parts[i]; break;
-      }
-    }
-  }
+  if(!name && !isFlat && !isSystemExport && !isNewStyle) name=parts[1]||'';
 
   // ----- OH CODE -----
   let ohCode='';
-  if(isSystemExport && /^OH\d+/i.test(parts[1]||'')) ohCode=parts[1];
+  if((isSystemExport||isNewStyle) && /^OH\d+/i.test(parts[1]||'')) ohCode=parts[1];
   else{
     const mOH=joined.match(/\b(OH\d{10,})\b/i);
     if(mOH) ohCode=mOH[1];
@@ -1267,7 +1283,6 @@ function makeMessage(a){
   let phone='';
   function pickPhoneFrom(str){
     const src=String(str||'');
-    // Ambil segmen sebelum | jika ada (format 628...|99999999)
     const head=src.split('|')[0];
     const re=/(?:^|[^\d])((?:62|08)\d{8,13})(?!\d)/g;
     let m, found='';
@@ -1287,7 +1302,7 @@ function makeMessage(a){
     phone=pickPhoneFrom(parts[8])||pickPhoneFrom(parts[9]);
   }
   if(!phone){
-    const phoneCandidates=isFlat?[joined]:[parts[13],parts[12],parts[8],...parts].filter(Boolean);
+    const phoneCandidates=isFlat?[joined]:[...parts].filter(Boolean);
     for(const x of phoneCandidates){
       phone=pickPhoneFrom(x);
       if(phone) break;
@@ -1295,7 +1310,6 @@ function makeMessage(a){
   }
 
   // ----- TANGGAL -----
-  // dukung dd/mm/yyyy dan yyyy-mm-dd (export sistem)
   let date='';
   if(isSystemExport){
     for(const x of [parts[13],parts[14],...parts]){
@@ -1315,12 +1329,18 @@ function makeMessage(a){
 
   // ----- SLOT / WAKTU -----
   let slotClean='';
-  // Format klasik: SLOT - 3 (12:00 - 14:00)
+  if(/\bANYTIME\b/i.test(joined)){
+    // cek apakah ada kolom ANYTIME murni
+    if(parts.some(p=>/^ANYTIME$/i.test(String(p||'').trim())) || /\bANYTIME\b/i.test(joined)){
+      // jika ada SLOT - n (...) utamakan slot; else Anytime
+      const hasSlotParen=/SLOT\s*-\s*\d+\s*\(/i.test(joined);
+      if(!hasSlotParen) slotClean='Anytime';
+    }
+  }
   const slotM=joined.match(/SLOT\s*-\s*\d+\s*\(([^)]+)\)/i);
   if(slotM){
     slotClean=slotM[1].trim();
   }
-  // Format export sistem: slot-3 - 12:00 - 14:00
   if(!slotClean){
     const slotSys=joined.match(/slot-?\s*\d+\s*[-–—]\s*(\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2})/i);
     if(slotSys) slotClean=slotSys[1].replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
@@ -1329,63 +1349,51 @@ function makeMessage(a){
     const p=String(parts[14]);
     const m=p.match(/(\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2})/);
     if(m) slotClean=m[1].replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
-    else if(!/^slot/i.test(p)) slotClean=p;
   }
-  if(!slotClean && !isFlat){
-    const slotIndex=parts.findIndex(x=>/SLOT\s*-\s*\d+\s*\(/i.test(x)||/slot-?\s*\d+/i.test(x));
-    if(slotIndex>=0){
-      const sm=parts[slotIndex].match(/SLOT\s*-\s*\d+\s*\(([^)]+)\)/i) || parts[slotIndex].match(/(\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2})/);
-      slotClean=sm?sm[1].replace(/[–—]/g,'-').trim():parts[slotIndex];
-    }
+  if(!slotClean && parts.some(p=>/^ANYTIME$/i.test(String(p||'').trim()))){
+    slotClean='Anytime';
   }
   const waktuFlat=slotClean||'Anytime';
 
   // ----- ID PELANGGAN -----
   let id='';
-  if(isSystemExport && /^\d{7,15}$/.test(parts[5]||'')){
+  // New style tab: kolom 0 = id sebelum OH
+  if(isNewStyle && /^\d{7,15}$/.test(parts[0]||'') && /^OH\d+/i.test(parts[1]||'')){
+    id=parts[0];
+  }
+  if(!id && isSystemExport && /^\d{7,15}$/.test(parts[5]||'')){
     id=parts[5];
   }
-  if(!id && (isFlat || /OH\d{8,}/i.test(joined))){
+  if(!id && (isFlat || isNewStyle || /OH\d{8,}/i.test(joined))){
     const mBeforeOH=joined.match(/(?:^|[^\d])(\d{7,15})\s+OH\d+/i);
     if(mBeforeOH) id=mBeforeOH[1];
   }
-  // System: kadang ID di kolom sebelum nama
-  if(!id && isSystemExport){
-    for(let i=0;i<Math.min(parts.length,10);i++){
-      if(/^\d{7,12}$/.test(parts[i]) && !/^62/.test(parts[i]) && !/^20\d{10,}$/.test(parts[i])){
-        // skip order-like 202610001518 (14 digit starting 20)
-        id=parts[i]; break;
-      }
-    }
-  }
   if(!id && !isFlat){
     for(let i=parts.length-1;i>=0;i--){
-      if(/^\d{7,15}$/.test(parts[i])){ id=parts[i]; break; }
+      if(/^\d{7,15}$/.test(parts[i]) && !/^62/.test(parts[i])){ id=parts[i]; break; }
     }
   }
 
-  // ----- PAKET & SVM (untuk template flat) -----
+  // ----- PAKET & SVM -----
   let paket='';
   const mPkg=joined.match(/HiFi\s*(\d+)\s*Mbps/i) || joined.match(/Internet\s*(\d+)/i);
-  if(mPkg) paket='Internet '+(mPkg[1]||mPkg[0].replace(/\D/g,''));
+  if(mPkg) paket='Internet '+(mPkg[1]);
   if(isSystemExport && /Internet\s*\d+/i.test(parts[2]||'')) paket=parts[2];
 
   let svm='';
-  const mSvm=joined.match(/\b((?:SVM|BBB)_[A-Z0-9_]+)\b/i) || joined.match(/\b(BBB_KABBKS\d+)\b/i);
+  const mSvm=joined.match(/\b(SVM_[A-Z0-9_]+)\b/i);
   if(mSvm) svm=mSvm[1];
   if(isSystemExport && parts[10] && /_/.test(parts[10])) svm=parts[10];
 
   // ----- ALAMAT -----
   let addr='';
-  if(isSystemExport){
-    // utamakan field alamat panjang (biasanya setelah kolom kosong / memuat JALAN ... 99999)
+  if(isSystemExport || isNewStyle){
     const addressCandidates=parts.filter(x=>
-      x && x.length>25 && /JALAN|NO\.?|BLOK|RW|PERUMAHAN|RESIDENCE/i.test(x)
+      x && x.length>25 && /JALAN|NO\.?|BLOK|RW|PERUMAHAN|GANG|RESIDENCE|GRAHA/i.test(x)
     );
-    // pilih yang paling panjang
     if(addressCandidates.length){
       addr=addressCandidates.slice().sort((a,b)=>b.length-a.length)[0];
-    }else{
+    }else if(isSystemExport){
       addr=parts[7]||'';
     }
   }else if(!isFlat){
@@ -1396,24 +1404,23 @@ function makeMessage(a){
     if(addressCandidates.length) addr=addressCandidates[0];
   }
   if(!addr||isFlat){
-    let mAddr=joined.match(/((?:PEMUKIMAN|PERUMAHAN|PONDOK|JALAN|JL\.?).+?)(?=\s+99999\s+(?:62|08)\d|\s+62\d{8,13}|\s+08\d{8,12})/i);
+    let mAddr=joined.match(/((?:PEMUKIMAN|PERUMAHAN|PONDOK|GRAHA|JALAN|JL\.?|GANG).+?)(?=\s+99999\s+(?:62|08)\d|\s+62\d{8,13}|\s+08\d{8,12})/i);
     if(mAddr) addr=mAddr[1].trim();
     else{
-      mAddr=joined.match(/(JALAN\s+.+?)(?=\s+(?:99999|\d{5})\s+(?:62|08)\d|\s+62\d{8,13}|$)/i);
+      mAddr=joined.match(/((?:JALAN|JL\.?|GANG)\s+.+?)(?=\s+(?:99999|\d{5})\s+(?:62|08)\d|\s+62\d{8,13}|$)/i);
       if(mAddr) addr=mAddr[1].trim();
     }
   }
-  // Bersihkan prefix "AREA-AREA-/" umum di export
   const slash=addr.indexOf('/');
   if(slash>=0 && slash<80) addr=addr.slice(slash+1).trim();
   addr=addr.replace(/^\s*[-–—]\s*/,'').replace(/\s+/g,' ').trim();
   addr=addr.replace(/\s*99999\s*$/,'').trim();
 
-  // ----- TEMPLATE PESAN -----
-  // isFlat → template WA teknisi baru (screenshot)
-  // isSystemExport / Excel lama → template HiFriend lama
+  // ----- TEMPLATE -----
+  // isNewStyle / isFlat (HiFi baris panjang) → template baru
+  // isSystemExport / Excel klasik → template HiFriend lama
   let message;
-  if(isFlat){
+  if(isFlat || isNewStyle){
     const tanggalStr=date?indoDateShort(date):'';
     const nameId=(name||'')+(id?'-'+id:'');
     const alamatBlock=[
