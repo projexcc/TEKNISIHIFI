@@ -1253,10 +1253,15 @@ function makeMessage(a){
     /^\d{4}-\d{2}-\d{2}/.test(parts[13]||'')
   );
 
-  // Format HiFi/Seahawks/SVM (baris panjang ATAU tab) → template baru (Selamat …)
-  // Ciri: ada OH + HiFi Mbps + (SLOT - n (…) / ANYTIME / SVM_ / Seahawks)
-  // dan BUKAN export INSTALLATION
-  const isNewStyle=!isSystemExport && /OH\d{8,}/i.test(joined) && /HiFi\s*\d+\s*Mbps/i.test(joined) && (
+  // Format template BARU (Selamat …):
+  // WAJIB ada angka ID tepat SEBELUM kode OH (contoh: 12186019 OH11599… NAMA HiFi…)
+  // Baik tab maupun baris panjang. Jika baris diawali OH… (tanpa ID di depan) → template LAMA.
+  const hasIdBeforeOH=(
+    (!isFlat && /^\d{7,15}$/.test(parts[0]||'') && /^OH\d+/i.test(parts[1]||'')) ||
+    /(?:^|[^\d])(\d{7,15})\s+OH\d+/i.test(joined)
+  );
+  const isNewStyle=!isSystemExport && hasIdBeforeOH && /OH\d{8,}/i.test(joined) && (
+    /HiFi\s*\d+\s*Mbps/i.test(joined) ||
     /SLOT\s*-\s*\d+\s*\(/i.test(joined) ||
     /\bANYTIME\b/i.test(joined) ||
     /\bSVM_[A-Z0-9_]+/i.test(joined) ||
@@ -1275,6 +1280,9 @@ function makeMessage(a){
       const mName=joined.match(/OH\d+\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{2,60}?)\s+HiFi/i);
       if(mName) name=mName[1].replace(/\s+/g,' ').trim();
     }
+  }else if(!isFlat && /^OH\d+/i.test(parts[0]||'') && parts[1] && !/^HiFi/i.test(parts[1]) && !/^\d{6,}$/.test(parts[1])){
+    // Format OH di kolom pertama → nama di kolom 2 (template lama)
+    name=parts[1];
   }else if(!isFlat && parts[1] && !/^OH\d/i.test(parts[1]) && !/^\d{6,}$/.test(parts[1])){
     name=parts[1];
   }
