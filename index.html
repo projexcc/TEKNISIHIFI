@@ -1195,6 +1195,19 @@ function indoDateShort(value){
   const dd=String(d).padStart(2,'0');
   return days[dt.getDay()]+' '+dd+' '+months[mo-1]+' '+y;
 }
+function todayForMessage(style){
+  // Tanggal real-time saat generate (lokal perangkat)
+  const now=new Date();
+  const d=now.getDate(), mo=now.getMonth(), y=now.getFullYear();
+  if(style==='short'){
+    const days=['minggu','senin','selasa','rabu','kamis','jumat','sabtu'];
+    const months=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    return days[now.getDay()]+' '+String(d).padStart(2,'0')+' '+months[mo]+' '+y;
+  }
+  const days=['MINGGU','SENIN','SELASA','RABU','KAMIS','JUMAT','SABTU'];
+  const months=['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+  return days[now.getDay()]+' '+d+' '+months[mo]+' '+y;
+}
 function greetingByHour(){
   // Sapaan otomatis sesuai jam lokal saat generate
   const h=new Date().getHours();
@@ -1421,7 +1434,7 @@ function makeMessage(a){
   // isSystemExport / Excel klasik → template HiFriend lama
   let message;
   if(isFlat || isNewStyle){
-    const tanggalStr=date?indoDateShort(date):'';
+    const tanggalStr=todayForMessage('short'); // real-time saat generate
     const nameId=(name||'')+(id?'-'+id:'');
     const alamatBlock=[
       ohCode,
@@ -1461,7 +1474,7 @@ ${id}
 Kami dari Indosat HiFi ingin melakukan konfirmasi jadwal pemasangan layanan internet di lokasi Bapak/Ibu.
 
 Berikut detail jadwalnya:
-📅 Hari & Tanggal: ${indoDate(date)}
+📅 Hari & Tanggal: ${todayForMessage('full')}
 ⏰ Waktu: ${slotClean}
 📍 Alamat: ${addr}
 
