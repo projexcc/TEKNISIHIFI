@@ -1325,21 +1325,55 @@ function extractReportRecords(raw){
     const line=rawLine.trim();
     if(!line)continue;
 
+    // Hari/Tgl : SELASA, 6 OKTOBER 2026  (spasi opsional di sekitar :)
     const dm=line.match(/^Hari\s*\/?\s*Tgl\s*:\s*(.+)$/i);
     if(dm){currentDate=normalizeReportDate(dm[1]);continue;}
 
     const cols=rawLine.split('\t').map(clean);
     const first=cols[0]||'';
+    // Baris pelanggan: diawali OH... (kode OH atau "OH 1")
     if(!/^OH\s*\d+/i.test(first))continue;
 
     current++;
-    const name=cols[1]||'';
     const joined=cols.join('\t');
+    const isInstallExport=/INSTALLATION/i.test(joined) || (/Internet\s*\d+/i.test(cols[1]||'') && cols.length>=6);
+
+    // ----- NAMA -----
+    let name='';
+    if(isInstallExport){
+      // OH | Internet xxx | INSTALLATION | PT... | ID | NAMA | alamat | ...
+      // atau OH | Internet xxx | INSTALLATION | PT... | ID | NAMA
+      for(let i=0;i<cols.length;i++){
+        const c=cols[i];
+        if(/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{4,60}$/.test(c) &&
+           !/INSTALLATION|INDOSAT|INTERNET|HUTCHISON|SYSTEM|CHANGE|TEAM|PERUMAHAN|JALAN|SLOT|ANYTIME|SEAHWAKS|NOKIA|DONE|REGULER|BBB/i.test(c) &&
+           !/^PT\b/i.test(c)){
+          name=c; break;
+        }
+      }
+      if(!name && cols[5] && !/^\d+$/.test(cols[5])) name=cols[5];
+    }else{
+      // Format lama: OH 1 | NAMA | ...
+      name=cols[1]||'';
+      if(/^Internet\s*\d+/i.test(name) || /^INSTALLATION$/i.test(name)) name='';
+    }
+
+    // ----- ID -----
     let id='';
-    const slotId=joined.match(/SLOT\s*(?:-\s*\d+|\d+)?\s*\([^)]*\)\s*(\d{7,15})/i);
-    if(slotId)id=slotId[1];
+    if(isInstallExport){
+      // ID numerik 7-15 digit setelah OH/paket/INSTALLATION, sebelum nama
+      for(let i=1;i<Math.min(cols.length,10);i++){
+        if(/^\d{7,15}$/.test(cols[i]) && !/^62/.test(cols[i])){
+          id=cols[i]; break;
+        }
+      }
+    }
     if(!id){
-      const slotPos=cols.findIndex(x=>/SLOT\s*(?:-\s*\d+|\d+)?\s*\([^)]*\)/i.test(x));
+      const slotId=joined.match(/SLOT\s*(?:-\s*\d+|\d+)?\s*\([^)]*\)\s*(\d{7,15})/i);
+      if(slotId)id=slotId[1];
+    }
+    if(!id){
+      const slotPos=cols.findIndex(x=>/SLOT\s*(?:-\s*\d+|\d+)?\s*\([^)]*\)/i.test(x)||/^slot-?\s*\d+/i.test(x));
       if(slotPos>=0){
         const after=cols.slice(slotPos+1);
         for(const value of after){
@@ -1349,13 +1383,34 @@ function extractReportRecords(raw){
         }
       }
     }
-    // Cadangan aman: jika format report menempelkan ID langsung setelah tanda ')' tanpa SLOT yang baku.
     if(!id){
       const fallback=joined.match(/\)\s*(\d{7,15})(?:\D|$)/);
       if(fallback)id=fallback[1];
     }
+    // Cadangan: angka 7-15 digit di baris (bukan OH digits, bukan phone 62)
+    if(!id){
+      for(const c of cols){
+        if(/^\d{7,15}$/.test(c) && !/^62/.test(c) && !/^20\d{10,}$/.test(c)){
+          id=c; break;
+        }
+      }
+    }
 
-    rows.push({name,id,sn:'',precone:'',nominal:getTariff(),done:true,date:currentDate});
+    // Tanggal fallback dari kolom ISO di baris export (2026-10-07 12:00:00)
+    let rowDate=currentDate;
+    if(!rowDate || !toIsoDate(rowDate)){
+      for(const c of cols){
+        const iso=String(c||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if(iso){
+          rowDate=normalizeReportDate(iso[3]+'/'+iso[2]+'/'+iso[1]);
+          break;
+        }
+        const dmy=String(c||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if(dmy){ rowDate=normalizeReportDate(dmy[0]); break; }
+      }
+    }
+
+    rows.push({name:name||'',id:id||'',sn:'',precone:'',nominal:getTariff(),done:true,date:rowDate||currentDate});
   }
 
   // Isi SN dan PRE/CONE berdasarkan blok pelanggan masing-masing.
@@ -1368,8 +1423,14 @@ function extractReportRecords(raw){
     if(gsm){rows[current].sn=gsm[1].trim();continue;}
     const sm=rawLine.match(/^\s*SN\s*[:\-]?\s*([A-Za-z0-9._\/-]+)\s*$/i);
     if(sm&&!rows[current].sn)rows[current].sn=sm[1].trim();
+    // G-SN : ZTEGDE7A7339
+    const gsm2=rawLine.match(/^\s*G\s*-?\s*SN\s*[:\-]\s*([A-Za-z0-9._\/-]+)/i);
+    if(gsm2){rows[current].sn=gsm2[1].trim();continue;}
     const pm=rawLine.match(/PRE\s*\/?\s*CONE\s*[:\-]?\s*(\d+(?:[.,]\d+)?)/i);
     if(pm)rows[current].precone=pm[1].replace(',','.');
+    // PRECONE : 100 (tanpa slash)
+    const pm2=rawLine.match(/^\s*PRECONE\s*[:\-]?\s*(\d+(?:[.,]\d+)?)/i);
+    if(pm2)rows[current].precone=pm2[1].replace(',','.');
   }
   return rows;
 }
