@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generator HiFriend v9</title>
+<link rel="stylesheet" href="hifriend.css">
+</head>
+<body>
+<div id="authGate" class="authLoading">
+  <div class="authCard">
+    <img class="authLogo" alt="Indosat" src="logo-indosat.png">
+    <h2 class="authTitle">HiFriend</h2>
+    <div class="authSub">Generator & Rekap WO<br>Silakan login untuk masuk ke aplikasi.</div>
+    <form id="loginForm" onsubmit="return handleLogin(event)">
+      <label for="loginEmail">Email</label>
+      <input id="loginEmail" type="email" autocomplete="username" placeholder="admin@contoh.com" required>
+      <label for="loginPassword">Password</label>
+      <div class="passwordWrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Masukkan password" required><button type="button" class="passwordEye" onclick="togglePasswordField('loginPassword',this)" aria-label="Tampilkan password">👁️</button></div>
+      <button id="loginBtn" class="authBtn" type="submit">🔐 Masuk</button>
+    </form>
+    <div id="authStatus" class="authStatus"></div>
+    <div class="authHint">Akun dikelola melalui Supabase Auth.</div>
+  </div>
+</div>
+<div id="appShell" style="display:none">
+<div class="wrap">
+  <div class="userBar">
+    <span id="offlineBadge" class="offlineBadge">📡 Offline</span>
+    <span id="userPill" class="userPill">👤 Memuat akun...</span>
+    <button class="themeBtn" id="themeBtn" onclick="toggleTheme()" title="Ganti tema">🌙</button>
+    <button class="logoutBtn" onclick="handleLogout()">Keluar</button>
+  </div>
+  <div class="appbar">
+  <img class="appLogo" alt="Indosat" src="logo-indosat.png">
+  <div>
+    <div class="apptitle"><span class="appBrandDot"></span>HiFriend</div>
+    <div class="appsub">Generator & Rekap WO</div>
+  </div>
+</div>
+  <div class="topnav">
+      <button id="tabHome" class="primary" style="display:none" onclick="showTab('home')">🏠 Beranda</button>
+      <button id="tabMsg" class="secondary" onclick="showTab('msg')">💬 Generator</button>
+      <button id="tabReport" class="secondary" style="display:none" onclick="showTab('report')">📋 Rekap WO</button>
+      <button id="tabAccount" class="secondary" style="display:none" onclick="showTab('account')">🔐 Akun</button>
+  </div>
+
+  <div id="adminPanel" class="card adminCard" style="display:none">
+    <div class="dbToolbar"><div><h1>🛠️ Admin — Akun Teknisi</h1><div class="sub" style="margin:4px 0 0">Tambah dan aktif/nonaktifkan akun teknisi tanpa masuk dashboard Supabase.</div></div><div class="dbBadge">ADMIN</div></div>
+    <div class="adminGrid">
+      <div><div class="filterLabel">NAMA TEKNISI</div><input id="newTechName" type="text" placeholder="Contoh: Budi" autocomplete="off"></div>
+      <div><div class="filterLabel">USERNAME</div><input id="newTechUsername" type="text" placeholder="budi" autocomplete="off"></div>
+      <div><div class="filterLabel">EMAIL LOGIN</div><input id="newTechEmail" type="email" placeholder="budi@hifriend.com" autocomplete="off"></div>
+      <div><div class="filterLabel">PASSWORD AWAL</div><div class="passwordWrap"><input id="newTechPassword" type="password" placeholder="Minimal 6 karakter" autocomplete="new-password"><button type="button" class="passwordEye" onclick="togglePasswordField('newTechPassword',this)" aria-label="Tampilkan password">👁️</button></div></div>
+    </div>
+    <div class="actions"><button type="button" class="primary" onclick="adminCreateTechnician()">➕ Tambah Teknisi</button><button type="button" class="secondary" onclick="adminLoadUsers()">🔄 Refresh Akun</button></div>
+    <div id="adminMsg" class="adminMsg"></div>
+    <div class="adminSearchRow"><div><div class="filterLabel">🔎 CARI TEKNISI</div><input id="adminUserSearch" type="search" placeholder="Nama, username, atau email" oninput="renderAdminUsers()"></div><div class="dbBadge" id="adminUserCount">0 TEKNISI</div></div>
+    <div id="adminUsers" class="adminUsers"><div class="count">Memuat akun...</div></div>
+  </div>
+
+  <div id="accountPanel" class="card accountPanel" style="display:none">
+    <div class="dbToolbar"><div><h1>🔐 Akun Saya</h1><div class="sub" style="margin:4px 0 0">Ganti password akun teknisi Anda. Password tidak disimpan di database aplikasi.</div></div><div class="dbBadge">TEKNISI</div></div>
+    <div class="accountGrid">
+      <div><div class="filterLabel">PASSWORD LAMA</div><div class="passwordWrap"><input id="oldOwnPassword" type="password" autocomplete="current-password" placeholder="Password lama"><button type="button" class="passwordEye" onclick="togglePasswordField('oldOwnPassword',this)">👁️</button></div></div>
+      <div><div class="filterLabel">PASSWORD BARU</div><div class="passwordWrap"><input id="newOwnPassword" type="password" autocomplete="new-password" placeholder="Minimal 6 karakter"><button type="button" class="passwordEye" onclick="togglePasswordField('newOwnPassword',this)">👁️</button></div></div>
+      <div><div class="filterLabel">KONFIRMASI PASSWORD BARU</div><div class="passwordWrap"><input id="confirmOwnPassword" type="password" autocomplete="new-password" placeholder="Ulangi password baru"><button type="button" class="passwordEye" onclick="togglePasswordField('confirmOwnPassword',this)">👁️</button></div></div>
+    </div>
+    <div class="actions"><button class="primary" type="button" onclick="changeOwnPassword()">🔑 Simpan Password</button></div>
+  </div>
+
+  <div id="homePanel" style="display:none">
+    <div class="card dashboardCard">
+      <div class="dashboardHead"><div><h1>🏠 Beranda</h1><div class="sub" style="margin:4px 0 0">Ringkasan WO dari database akun Anda.</div></div><div class="dbBadge">RINGKASAN WO</div></div>
+      <div class="dashboardControls">
+        <div class="dashboardControl"><label>📅 PERIODE</label><select id="dashPeriod" onchange="handleDashPeriodChange()"><option value="all">Semua WO</option><option value="today">Hari ini</option><option value="7">7 hari terakhir</option><option value="30">30 hari terakhir</option><option value="month">Bulan ini</option><option value="lastmonth">Bulan lalu</option><option value="custom">Custom</option></select></div>
+        <div id="dashFromWrap" class="dashboardControl" style="display:none"><label>DARI TANGGAL</label><input id="dashFrom" type="date" onchange="setDashPeriodCustom();renderDashboard()"></div>
+        <div id="dashToWrap" class="dashboardControl" style="display:none"><label>SAMPAI TANGGAL</label><input id="dashTo" type="date" onchange="setDashPeriodCustom();renderDashboard()"></div>
+        <div class="dashboardControl"><label>🎯 TARGET HARIAN</label><div style="display:flex;gap:6px;align-items:center"><input id="dailyTarget" type="number" min="1" max="999" value="5" style="flex:1;min-width:0"><button class="primary" type="button" onclick="saveDailyTarget()">Simpan</button></div></div>
+      </div>
+      <div class="targetProgress">
+        <div>
+          <strong id="targetSummary">0 / 5 WO hari ini</strong>
+          <div><small>Progress target harian teknisi</small></div>
+        </div>
+        <div class="targetBar"><div class="targetBarFill" id="targetBarFill" style="width:0%"></div></div>
+      </div>
+      <div class="chartGrid"><div class="chartBox"><div class="chartTitle">WO 7 Hari</div><div class="chartSub">Jumlah WO per hari</div><div id="woDailyChart" class="barChart"></div></div><div class="chartBox"><div class="chartTitle">WO 6 Bulan</div><div class="chartSub">Jumlah WO per bulan</div><div id="woMonthlyChart" class="barChart"></div></div></div>
+      <div class="dashNote">Data mengikuti WO yang tersimpan otomatis. Dashboard hanya untuk melihat ringkasan; proses rekap tetap dilakukan di menu 📋 Rekap WO Done.</div>
+    </div>
+  </div>
+
+  <div id="reportTab" style="display:none">
+    <div id="reportInputPanel" class="reportPanel active">
+    <div class="card">
+      <h1>Rekap WO Done</h1>
+      <p class="sub">Paste satu atau banyak REPORT INSTALASI BARU. Aplikasi otomatis mengambil tanggal report, ID pelanggan, nama, dan panjang kabel dari PRE/CONE. Setiap WO otomatis dihitung Rp70.000.</p>
+      <label for="reportInput">Data Report Instalasi</label>
+      <textarea id="reportInput" placeholder="Paste REPORT INSTALASI BARU di sini..."></textarea>
+      <div class="actions">
+        <button class="primary" onclick="generateReport()">⚡ Rekap</button>
+        <button class="secondary" onclick="clearReport()">Bersihkan</button>
+        <button class="secondary" onclick="downloadExcel()">📥 Download Excel</button>
+      </div>
+      <div id="reportStatus" class="count"></div>
+    </div>
+    </div>
+    <div id="databasePanel" class="reportPanel active">
+    <div class="card" id="databaseSection">
+      <div class="dbToolbar"><div><h1>Database WO</h1><div class="sub" style="margin:4px 0 0">Semua WO otomatis tersimpan setelah direkap. Data tersimpan di akun Supabase ini.</div></div><div class="dbBadge">AUTO SAVE</div></div>
+      <div class="actions">
+        <button class="primary" onclick="loadDatabase()">🔄 Refresh Database</button>
+        <button class="secondary" onclick="downloadDatabaseExcel()">📥 Download Semua Excel</button>
+      </div>
+      <div id="dbStatus" class="count">Memuat database...</div>
+      <div id="dbMoney"></div>
+      <div id="dbStats" class="dbStats"></div>
+      <div class="dbToolsEnhanced">
+        <div><div class="filterLabel">🔎 CARI ID / NAMA / SN</div><input id="dbSearch" type="search" placeholder="ID, nama, atau SN..." oninput="renderDatabase()"></div>
+        <div><div class="filterLabel">📅 DARI TANGGAL</div><input id="dbFrom" type="date" onchange="renderDatabase()"></div>
+        <div><div class="filterLabel">📅 SAMPAI TANGGAL</div><input id="dbTo" type="date" onchange="renderDatabase()"></div>
+        <div><div class="filterLabel">📊 URUTKAN</div>
+          <select id="dbSort" onchange="renderDatabase()">
+            <option value="date-asc">Tanggal ↑</option>
+            <option value="date-desc">Tanggal ↓</option>
+            <option value="name">Nama A-Z</option>
+            <option value="nominal-desc">Nominal ↓</option>
+            <option value="meter-desc">Meter ↓</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px" id="filterChips">
+        <span class="filterChip active" data-filter="all" onclick="setFilterChip(this,'all')">Semua</span>
+        <span class="filterChip" data-filter="today" onclick="setFilterChip(this,'today')">Hari ini</span>
+        <span class="filterChip" data-filter="week" onclick="setFilterChip(this,'week')">7 hari</span>
+        <span class="filterChip" data-filter="month" onclick="setFilterChip(this,'month')">Bulan ini</span>
+      </div>
+      <div class="settingRow">
+        <div><div class="filterLabel">💰 TARIF WO BARU</div><input id="tariffInput" type="number" min="0" step="1000" value="70000"></div>
+        <button class="primary" onclick="saveTariff()">💾 Simpan Tarif</button>
+      </div>
+
+    </div>
+    <div class="card">
+      <label>Semua WO Tersimpan</label>
+      <div id="dbFilterNote"></div>
+      <div id="dbResults"><div class="count">Belum ada data.</div></div>
+    </div>
+    </div>
+  </div>
+
+  <div id="msgTab">
+  <div class="card">
+    <h1>Generator Pesan HiFriend</h1>
+    <p class="sub">Paste langsung SEMUA data pelanggan dari Excel (Ctrl+A → Copy → Paste).</p>
+    <label for="input">Data pelanggan</label>
+    <textarea id="input" placeholder="Paste semua baris dari Excel di sini..."></textarea>
+    <div class="mappingStartRow">
+      <div style="flex:1">
+        <label for="mappingStart">📍 Titik Start Mapping</label>
+        <input id="mappingStart" type="text" placeholder="Posisi teknisi / alamat start...">
+      </div>
+      <button class="secondary" type="button" onclick="mappingUseMyLocation()">📍 Posisi Saya</button>
+    </div>
+    <div id="mappingLocStatus" class="sub"></div>
+    <div class="actions">
+      <button class="primary" onclick="generate()">⚡ Generate + Mapping</button>
+      <button class="secondary" onclick="clearAll()">Bersihkan</button>
+    </div>
+    <div id="status" class="count"></div>
+  </div>
+
+  <div class="card">
+    <label>💬 Hasil Generator Chat</label>
+    <div id="results"><div class="count">Belum ada hasil.</div></div>
+  </div>
+
+  <div class="card" id="mappingResultCard">
+    <div class="mappingHeader">
+      <div>
+        <h2>🧭 Hasil Mapping WO</h2>
+        <div class="sub">Otomatis memakai data WO yang sama. Urutan: slot → kecamatan → area.</div>
+      </div>
+      <div class="mappingStats"><span id="mappingTotal">0 WO</span><span id="mappingConflict">0 bentrok</span></div>
+    </div>
+    <div id="mappingStatus" class="count">Belum ada hasil mapping.</div>
+    <div id="mappingList"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="hifriend.js"></script>
+
+</div>
+</body>
+</html>
