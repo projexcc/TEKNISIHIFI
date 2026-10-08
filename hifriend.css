@@ -266,3 +266,33 @@ button.primary,button.secondary,.actions > button{
   .actions{gap:8px}
   .actions > button{flex:1 1 calc(50% - 4px)}
 }
+
+/* ===== Generator + Mapping WO ===== */
+.mappingStartRow{display:flex;align-items:flex-end;gap:8px;margin:12px 0 4px}
+.mappingStartRow input{width:100%;box-sizing:border-box}
+.mappingStartRow>div{min-width:0}
+.mappingStartRow button{white-space:nowrap;min-height:42px}
+.mappingHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.mappingHeader h2{margin:0;font-size:18px}
+.mappingStats{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.mappingStats span{font-size:10px;font-weight:900;padding:6px 9px;border-radius:999px;background:#fff4d2;border:1px solid #f0d58f;color:#8a6200;white-space:nowrap}
+.mappingWO{display:flex;align-items:center;gap:9px;margin-top:8px;padding:10px;border:1px solid #eee1c9;border-radius:14px;background:#fffdf8}
+.mappingNum{width:28px;height:28px;flex:0 0 28px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:950;background:#f5eee0;color:#6b5a3a}
+.mappingBody{min-width:0;flex:1}
+.mappingName{font-size:13px;font-weight:950;line-height:1.2}
+.mappingMeta,.mappingAddress{font-size:10px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mappingBottom{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:5px}
+.mappingSlot{font-size:10px;font-weight:900;padding:4px 7px;border-radius:7px;background:#eef8f1;color:#087a4d}
+.mappingWarn{font-size:9px;font-weight:950;padding:4px 7px;border-radius:7px;background:#fff0f0;color:#d62f45}
+.mappingConflict{border-color:#f0bcbc;background:#fffafa}
+.mappingNav{flex:0 0 auto;text-decoration:none;font-size:10px;font-weight:950;padding:8px 10px;border-radius:9px;background:#f5f1e9;color:#292c33}
+.mappingNav:hover{filter:brightness(.97)}
+#mappingLocStatus{min-height:16px}
+@media(max-width:560px){
+  .mappingStartRow{align-items:stretch;flex-direction:column}
+  .mappingStartRow button{width:100%}
+  .mappingHeader{flex-direction:column}
+  .mappingStats{justify-content:flex-start}
+  .mappingWO{align-items:flex-start}
+  .mappingNav{padding:7px 8px}
+}

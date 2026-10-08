@@ -155,16 +155,36 @@
     <p class="sub">Paste langsung SEMUA data pelanggan dari Excel (Ctrl+A → Copy → Paste).</p>
     <label for="input">Data pelanggan</label>
     <textarea id="input" placeholder="Paste semua baris dari Excel di sini..."></textarea>
+    <div class="mappingStartRow">
+      <div style="flex:1">
+        <label for="mappingStart">📍 Titik Start Mapping</label>
+        <input id="mappingStart" type="text" placeholder="Posisi teknisi / alamat start...">
+      </div>
+      <button class="secondary" type="button" onclick="mappingUseMyLocation()">📍 Posisi Saya</button>
+    </div>
+    <div id="mappingLocStatus" class="sub"></div>
     <div class="actions">
-      <button class="primary" onclick="generate()">⚡ Generate</button>
+      <button class="primary" onclick="generate()">⚡ Generate + Mapping</button>
       <button class="secondary" onclick="clearAll()">Bersihkan</button>
     </div>
     <div id="status" class="count"></div>
   </div>
 
   <div class="card">
-    <label>Hasil</label>
+    <label>💬 Hasil Generator Chat</label>
     <div id="results"><div class="count">Belum ada hasil.</div></div>
+  </div>
+
+  <div class="card" id="mappingResultCard">
+    <div class="mappingHeader">
+      <div>
+        <h2>🧭 Hasil Mapping WO</h2>
+        <div class="sub">Otomatis memakai data WO yang sama. Urutan: slot → kecamatan → area.</div>
+      </div>
+      <div class="mappingStats"><span id="mappingTotal">0 WO</span><span id="mappingConflict">0 bentrok</span></div>
+    </div>
+    <div id="mappingStatus" class="count">Belum ada hasil mapping.</div>
+    <div id="mappingList"></div>
   </div>
 </div>
 

@@ -1105,12 +1105,108 @@ function generate(){
     box.appendChild(div);
   });
   status.innerHTML=`<span class="ok">✓ ${rows.length} pelanggan berhasil dibuat. Klik <b>💬 Buka WhatsApp</b> untuk langsung membuka chat dengan pesan terisi.</span>`;
+  mappingRun(raw);
 }
 
 function clearAll(){
   document.getElementById('input').value='';
   document.getElementById('results').innerHTML='<div class="count">Belum ada hasil.</div>';
   document.getElementById('status').textContent='';
+  const mt=document.getElementById('mappingTotal'); if(mt) mt.textContent='0 WO';
+  const mc=document.getElementById('mappingConflict'); if(mc) mc.textContent='0 bentrok';
+  const ms=document.getElementById('mappingStatus'); if(ms) ms.textContent='Belum ada hasil mapping.';
+  const ml=document.getElementById('mappingList'); if(ml) ml.innerHTML='';
+}
+
+// ===== MAPPING TERINTEGRASI DENGAN GENERATOR CHAT =====
+function mappingEsc(v){
+  return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function mappingParseWO(raw){
+  return String(raw||'').split(/\r?\n/).map(x=>x.trimEnd()).filter(x=>{
+    const t=x.trim();
+    return /OH\d{8,}/i.test(t) && (/\t/.test(t) || /SLOT\s*-?\s*\d+\s*\(/i.test(t) || /HiFi\s*\d+\s*Mbps/i.test(t));
+  }).map((line,idx)=>{
+    const c=line.split('\t').map(v=>String(v??'').trim());
+    const joined=c.join(' ').replace(/\s+/g,' ').trim();
+    const ohIndex=c.findIndex(v=>/^OH\d{8,}/i.test(v));
+    const shift=ohIndex>0 ? ohIndex : 0;
+    const find=(re,def='')=>{const z=c.find(v=>re.test(v));return z?String(z).trim():def};
+    let slot=find(/SLOT\s*-\s*\d+\s*\(([^)]+)\)/i) || find(/slot-?\s*\d+\s*[-–—]\s*(\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2})/i);
+    slot=slot.replace(/^SLOT\s*-\s*\d+\s*\(([^)]+)\)$/i,'$1').replace(/^slot-?\s*\d+\s*[-–—]\s*/i,'').replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
+    const speed=find(/HiFi\s*\d+\s*Mbps/i);
+    const status=find(/^(DONE|OPEN|CANCEL|CLOSED|PENDING|IN\s*PROGRESS)$/i);
+    const province=c[4+shift]||'';
+    const city=c[5+shift]||'';
+    const kab=c[6+shift]||'';
+    const kec=c[7+shift]||'';
+    const kel=c[8+shift]||'';
+    const postcode=c[9+shift]||'';
+    const area=c[10+shift]||'';
+    let name=c[1+shift]||'';
+    if(!name || /^HiFi/i.test(name) || /^OH\d/i.test(name)){
+      const m=joined.match(/OH\d{8,}\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ.'\-\s]{2,60}?)\s+HiFi/i);
+      name=m?m[1].replace(/\s+/g,' ').trim():'WO '+(idx+1);
+    }
+    let address='';
+    for(let i=11+shift;i<c.length;i++){
+      const v=c[i];
+      if(v && !/^SLOT\s/i.test(v) && v.length>8){address=v;break;}
+    }
+    if(!address){
+      const m=joined.match(/((?:PEMUKIMAN|PERUMAHAN|PONDOK|GRAHA|JALAN|JL\.?|GANG).+?)(?=\s+(?:99999|\d{5})\s+(?:62|08)\d|\s+62\d{8,13}|\s+08\d{8,12}|$)/i);
+      if(m) address=m[1].trim();
+    }
+    if(!address) address=[kel, kec, kab, city, province].filter(Boolean).join(', ');
+    return {name,slot,speed,status,province,city,kab,kec,kel,postcode,area,address,oh:find(/^OH\d{8,}$/i)};
+  });
+}
+function mappingMins(slot){
+  const m=String(slot||'').match(/(\d{1,2})[:.](\d{2})\s*[-–—]\s*(\d{1,2})[:.](\d{2})/);
+  return m?(+m[1]*60 + +m[2]):9999;
+}
+function mappingRun(raw){
+  const list=mappingParseWO(raw);
+  const total=document.getElementById('mappingTotal');
+  const conflict=document.getElementById('mappingConflict');
+  const status=document.getElementById('mappingStatus');
+  const out=document.getElementById('mappingList');
+  if(!total||!conflict||!status||!out)return;
+  total.textContent=`${list.length} WO`;
+  if(!list.length){conflict.textContent='0 bentrok';status.textContent='Data WO belum terbaca untuk mapping.';out.innerHTML='';return;}
+  const slotCount={};
+  list.forEach(x=>{const k=x.slot||'TANPA SLOT';slotCount[k]=(slotCount[k]||0)+1;});
+  list.forEach(x=>x.conflict=!!x.slot&&slotCount[x.slot]>1);
+  list.sort((a,b)=>mappingMins(a.slot)-mappingMins(b.slot)||a.kec.localeCompare(b.kec,'id')||a.area.localeCompare(b.area,'id')||a.name.localeCompare(b.name,'id'));
+  const conflicts=list.filter(x=>x.conflict).length;
+  conflict.textContent=`${conflicts} bentrok`;
+  status.innerHTML=`✓ ${list.length} WO berhasil dipetakan${conflicts?` — <b>⚠️ ${conflicts} WO bentrok slot</b>`:''}.`;
+  out.innerHTML=list.map((x,i)=>{
+    const q=encodeURIComponent(x.address||x.area||x.name);
+    return `<div class="mappingWO ${x.conflict?'mappingConflict':''}">
+      <div class="mappingNum">${i+1}</div>
+      <div class="mappingBody">
+        <div class="mappingName">${mappingEsc(x.name||'Pelanggan')}</div>
+        <div class="mappingMeta">${mappingEsc(x.speed||'-')} • ${mappingEsc(x.kec||'-')} • ${mappingEsc(x.area||'-')}</div>
+        <div class="mappingAddress">${mappingEsc(x.address||'-')}</div>
+        <div class="mappingBottom"><span class="mappingSlot">⏰ ${mappingEsc(x.slot||'Tanpa slot')}</span>${x.conflict?'<span class="mappingWarn">⚠️ BENTROK</span>':''}</div>
+      </div>
+      <a class="mappingNav" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">📍 Navigasi</a>
+    </div>`;
+  }).join('');
+}
+function mappingUseMyLocation(){
+  const input=document.getElementById('mappingStart');
+  const stat=document.getElementById('mappingLocStatus');
+  if(!navigator.geolocation){if(stat)stat.textContent='GPS tidak didukung browser ini.';return;}
+  if(stat)stat.textContent='📡 Mengambil posisi...';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const v=`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+    if(input)input.value=v;
+    if(stat)stat.textContent='✓ Posisi teknisi siap sebagai titik start.';
+  },err=>{
+    if(stat)stat.textContent='⚠️ Posisi tidak bisa diambil. Pastikan izin lokasi aktif.';
+  },{enableHighAccuracy:true,timeout:12000,maximumAge:30000});
 }
 
 function showTab(tab){
