@@ -716,11 +716,46 @@ async function saveCurrentPayrollPeriod(silent = false) {
 async function renderPayrollHistory() {
   const el=document.getElementById('payrollHistory');
   if(!el||!supabaseClient||!currentUser?.id) return;
-  const {data,error}=await supabaseClient.from('payroll_periods').select('*')
-    .eq('technician_id',currentUser.id).order('period_start',{ascending:false}).limit(24);
-  if(error){el.innerHTML='<div class="count">Riwayat belum tersedia: '+String(error.message||error).replace(/</g,'&lt;')+'</div>';return;}
-  if(!data?.length){el.innerHTML='<div class="count">Riwayat gaji akan muncul otomatis setelah data periode dihitung.</div>';return;}
-  el.innerHTML=data.map(r=>'<div class="payrollHistoryRow"><div class="payrollHistoryHead"><div><strong>'+r.period_start+' — '+r.period_end+'</strong><div class="payrollHistoryMeta">'+(r.attendance_days||0)+' hari masuk · '+(r.wo_count||0)+' WO</div></div><div class="payrollHistoryAmount">'+formatRupiah(r.net_total)+'</div></div><div class="payrollHistoryDetails"><span>Gaji: '+formatRupiah(r.attendance_pay)+'</span><span>Bensin: '+formatRupiah(r.fuel_pay)+'</span><span>WO: '+formatRupiah(r.wo_pay)+'</span><span>Bonus: '+formatRupiah(r.bonus_pay)+'</span></div></div>').join('');
+
+  // Tampilkan semua periode yang benar-benar memiliki data WO atau checkpoint
+  // milik teknisi yang sedang login, bukan hanya 3 periode terakhir.
+  const rows=Array.isArray(databaseRows)?databaseRows:[];
+  let checkpointRows=[];
+  const {data:attData,error:attError}=await supabaseClient.from('attendance_checkpoints')
+    .select('work_date').eq('technician_id',currentUser.id).order('work_date');
+  if(attError) console.warn('Riwayat gaji: checkpoint tidak terbaca',attError.message);
+  else checkpointRows=attData||[];
+
+  const checkpoints=[...new Set(checkpointRows.map(x=>dateKey(x.work_date)).filter(Boolean))];
+  const periodStartForDate=(dateISO)=>{
+    const d=new Date(dateISO+'T12:00:00');
+    if(d.getDate()<26) d.setMonth(d.getMonth()-1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-26`;
+  };
+  const periodStarts=new Set();
+  rows.forEach(r=>{const dt=dateKey(r.date);if(dt)periodStarts.add(periodStartForDate(dt));});
+  checkpoints.forEach(dt=>periodStarts.add(periodStartForDate(dt)));
+
+  const periods=[...periodStarts]
+    .sort((a,b)=>b.localeCompare(a))
+    .map(start=>payrollBoundsFromStart(start))
+    .filter(p=>rows.some(r=>{const dt=dateKey(r.date);return dt&&dt>=p.start&&dt<=p.end;}) || checkpoints.some(d=>d>=p.start&&d<=p.end));
+
+  if(!periods.length){
+    el.innerHTML='<div class="count">Belum ada riwayat gaji dengan data WO atau kehadiran.</div>';
+    return;
+  }
+
+  el.innerHTML=periods.map(p=>{
+    const periodRows=rows.filter(r=>{const dt=dateKey(r.date);return dt&&dt>=p.start&&dt<=p.end;});
+    const days=checkpoints.filter(d=>d>=p.start&&d<=p.end&&d>='2026-11-01').length;
+    const settings=payrollSettingsForPeriod(p,payrollSettings);
+    const calc=payrollCompute(days,periodRows.length,settings);
+    calc.wo_pay=calculateWOPay(periodRows);
+    calc.gross_total=calc.attendance_pay+calc.fuel_pay+calc.wo_pay+calc.bonus_pay;
+    calc.net_total=calc.gross_total;
+    return '<div class="payrollHistoryRow"><div class="payrollHistoryHead"><div><strong>'+p.start+' — '+p.end+'</strong><div class="payrollHistoryMeta">'+days+' hari masuk · '+periodRows.length+' WO</div></div><div class="payrollHistoryAmount">'+formatRupiah(calc.net_total)+'</div></div><div class="payrollHistoryDetails"><span>Gaji: '+formatRupiah(calc.attendance_pay)+'</span><span>Bensin: '+formatRupiah(calc.fuel_pay)+'</span><span>WO: '+formatRupiah(calc.wo_pay)+'</span><span>Bonus: '+formatRupiah(calc.bonus_pay)+'</span></div></div>';
+  }).join('');
 }
 
 async function loadDatabase(){
