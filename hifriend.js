@@ -609,7 +609,7 @@ function payrollCompute(attendance,woCount,s=payrollSettings,deductions=0) {
   const attendancePay=Math.min(days,target)*(Number(s.daily_rate)||0);
   const fuel=Number(s.fuel_allowance)||0;
   const wo=Math.max(0,Number(woCount)||0)*(Number(s.wo_rate)||0);
-  const bonus=days>target?(Number(s.day27_bonus)||0):0;
+  const bonus = Math.max(0, days - target) * 100000;
   const gross=attendancePay+fuel+wo+bonus;
   return {attendance_pay:attendancePay,fuel_pay:fuel,wo_pay:wo,bonus_pay:bonus,gross_total:gross,net_total:gross-Math.max(0,Number(deductions)||0)};
 }
