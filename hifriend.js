@@ -205,14 +205,15 @@ async function syncRowsToSupabase(rows){
     customer_name:String(r.name||''),
     tanggal_done:toIsoDate(r.date),
     panjang_kabel:Math.max(0,Math.round(parseFloat(String(r.precone||'').replace(',','.'))||0)),
-    nominal:Number(r.nominal)||getTariff(),
+    nominal:Number(r.nominal)||getNominalForDate(r.date),
     status:'DONE',
     sn:String(r.sn||'').trim(),
     wo_type:normalizeWoType(r.wo_type||r.woType),
     utang_sales:Math.max(0,Math.round(Number(r.utang_sales??r.utangSales)||0)),
     sales_note:String(r.sales_note||r.salesNote||'').trim(),
     utang_due_date:toIsoDate(r.utang_due_date||r.utangDueDate)||null,
-    maps_url:String(r.maps_url||r.mapsUrl||'').trim()||null
+    maps_url:String(r.maps_url||r.mapsUrl||'').trim()||null,
+    ont_old_photo_url:String(r.ont_old_photo_url||r.ontOldPhotoUrl||'').trim()||null
   })).filter(r=>r.customer_id&&r.tanggal_done);
   if(!payload.length)return {saved:0,skipped:0};
   const {data:existing,error:readError}=await supabaseClient.from('wo').select('customer_id,tanggal_done').eq('user_id',authUser.id);
@@ -228,9 +229,16 @@ async function syncRowsToSupabase(rows){
   if(fresh.length){
     let {error}=await supabaseClient.from('wo').insert(fresh);
     if(error && isMissingColumnError(error)){
-      let legacy=fresh.map(({wo_type,utang_sales,sales_note,utang_due_date,maps_url,...row})=>row);
+      let legacy=fresh.map(({wo_type,utang_sales,sales_note,utang_due_date,maps_url,ont_old_photo_url,...row})=>row);
       let retry=await supabaseClient.from('wo').insert(legacy);
       error=retry.error;
+      if(error && isMissingColumnError(error)){
+        legacy=fresh.map(({wo_type,utang_sales,sales_note,utang_due_date,maps_url,ont_old_photo_url,...row})=>row);
+        // coba tanpa foto dulu
+        legacy=legacy.map(({ont_old_photo_url,...row})=>row);
+        retry=await supabaseClient.from('wo').insert(legacy);
+        error=retry.error;
+      }
       if(error && isMissingColumnError(error,'sn')){
         legacy=legacy.map(({sn,...row})=>row);
         retry=await supabaseClient.from('wo').insert(legacy);
@@ -245,20 +253,24 @@ async function syncRowsToSupabase(rows){
   return {saved:fresh.length,skipped:payload.length-fresh.length};
 }
 async function getRemoteWORows(){
-  const fullSelect='id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,wo_type,utang_sales,sales_note,utang_due_date,maps_url,created_at';
+  const fullSelect='id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,wo_type,utang_sales,sales_note,utang_due_date,maps_url,ont_old_photo_url,created_at';
   let q= supabaseClient.from('wo').select(fullSelect).eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
   let {data,error}=await q;
   if(error && isMissingColumnError(error)){
-    const mid=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,wo_type,utang_sales,sales_note,utang_due_date,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
-    if(!mid.error){ data=mid.data; error=null; }
-    else if(isMissingColumnError(mid.error)){
-      const mid2=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
-      if(!mid2.error){ data=mid2.data; error=null; }
-      else if(isMissingColumnError(mid2.error,'sn')){
-        const fallback=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
-        data=fallback.data; error=fallback.error;
-      }else{ error=mid2.error; }
-    }else{ error=mid.error; }
+    const midPhoto=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,wo_type,utang_sales,sales_note,utang_due_date,maps_url,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
+    if(!midPhoto.error){ data=midPhoto.data; error=null; }
+    else if(isMissingColumnError(midPhoto.error)){
+      const mid=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,wo_type,utang_sales,sales_note,utang_due_date,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
+      if(!mid.error){ data=mid.data; error=null; }
+      else if(isMissingColumnError(mid.error)){
+        const mid2=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,sn,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
+        if(!mid2.error){ data=mid2.data; error=null; }
+        else if(isMissingColumnError(mid2.error,'sn')){
+          const fallback=await supabaseClient.from('wo').select('id,customer_id,customer_name,tanggal_done,panjang_kabel,nominal,status,created_at').eq('user_id',currentUser.id).order('created_at',{ascending:true}).order('id',{ascending:true});
+          data=fallback.data; error=fallback.error;
+        }else{ error=mid2.error; }
+      }else{ error=mid.error; }
+    }else{ error=midPhoto.error; }
   }
   if(error)throw error;
   return (data||[]).map(r=>({
@@ -276,7 +288,8 @@ async function getRemoteWORows(){
     utang_sales:Math.max(0,Math.round(Number(r.utang_sales)||0)),
     sales_note:String(r.sales_note||'').trim(),
     utang_due_date:r.utang_due_date||'',
-    maps_url:r.maps_url||''
+    maps_url:r.maps_url||'',
+    ont_old_photo_url:r.ont_old_photo_url||''
   }));
 }
 
@@ -333,7 +346,120 @@ async function loadAccountTariff(){
 function getTariff(){
   return Number.isFinite(Number(accountTariff))&&Number(accountTariff)>=0?Number(accountTariff):70000;
 }
+/** Nominal tersimpan ke tabel WO: 70rb sebelum 1 Nov 2026, setelahnya ikut payroll wo_rate (default 20rb). */
+function getNominalForDate(dateVal){
+  const dt=dateKey(dateVal)||toIsoDate(dateVal)||'';
+  if(dt && dt < '2026-11-01') return 70000;
+  const fromPayroll=Number(payrollSettings?.wo_rate);
+  if(Number.isFinite(fromPayroll)&&fromPayroll>=0) return Math.round(fromPayroll);
+  return getTariff()===70000 ? 20000 : getTariff();
+}
 
+const HF_EVIDENCE_BUCKET='wo-evidence';
+
+/** Kompres foto bukti (max sisi ~1600px, JPEG ~0.82) agar upload cepat. */
+async function compressEvidenceBlob(file, maxSide=1600, quality=0.82){
+  try{
+    if(!file || !(file instanceof Blob)) return file;
+    let bmp=null;
+    try{ bmp=await createImageBitmap(file,{imageOrientation:'from-image'}); }
+    catch(_){ bmp=await createImageBitmap(file); }
+    const w=bmp.width,h=bmp.height;
+    const scale=Math.min(1, maxSide/Math.max(w,h));
+    const cw=Math.max(1,Math.round(w*scale));
+    const ch=Math.max(1,Math.round(h*scale));
+    const canvas=document.createElement('canvas');
+    canvas.width=cw; canvas.height=ch;
+    const ctx=canvas.getContext('2d');
+    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(bmp,0,0,cw,ch);
+    try{ bmp.close&&bmp.close(); }catch(_){}
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+    return blob||file;
+  }catch(e){
+    console.warn('compressEvidenceBlob',e);
+    return file;
+  }
+}
+
+/** Upload foto ONT lama ke Supabase Storage → URL publik (atau path). */
+async function uploadOntOldPhoto(file, meta){
+  if(!supabaseClient||!currentUser?.id) throw new Error('Belum login.');
+  if(!file) return null;
+  const blob=await compressEvidenceBlob(file);
+  const cust=String(meta?.customerId||meta?.id||'wo').replace(/[^A-Za-z0-9_-]/g,'').slice(0,20)||'wo';
+  const day=String(meta?.dateIso||localISO(new Date())).replace(/[^0-9-]/g,'');
+  const stamp=Date.now();
+  const path=`${currentUser.id}/${cust}_${day}_${stamp}.jpg`;
+  const {error}=await supabaseClient.storage.from(HF_EVIDENCE_BUCKET).upload(path, blob, {
+    contentType:'image/jpeg',
+    upsert:false,
+    cacheControl:'3600'
+  });
+  if(error){
+    const msg=String(error.message||error);
+    if(/bucket|not found|does not exist/i.test(msg)){
+      throw new Error('Bucket Storage "wo-evidence" belum dibuat. Jalankan SQL migrasi di Supabase.');
+    }
+    throw new Error(msg||'Upload foto gagal');
+  }
+  const {data}=supabaseClient.storage.from(HF_EVIDENCE_BUCKET).getPublicUrl(path);
+  return data?.publicUrl||path;
+}
+
+/** Modal opsional: foto ONT lama sebagai bukti alat masih di customer. */
+function promptOntOldPhoto(rowMeta){
+  return new Promise((resolve)=>{
+    let chosen=null;
+    let previewUrl=null;
+    Swal.fire({
+      title:'📷 Foto ONT Lama',
+      html:
+        '<p style="text-align:left;font-size:13px;color:#64748b;margin:0 0 12px;line-height:1.5">Upload foto <b>ONT lama</b> di lokasi pelanggan sebagai bukti alat masih tertinggal / terpasang. Opsional — bisa dilewati.</p>'+
+        '<div id="hfOntOldPreview" style="display:none;margin:0 0 12px;border-radius:12px;overflow:hidden;border:1px solid #eadfc9;max-height:220px">'+
+          '<img id="hfOntOldImg" alt="Preview" style="display:block;width:100%;max-height:220px;object-fit:contain;background:#111"/>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<button type="button" id="hfOntOldCam" class="swal2-confirm swal2-styled" style="flex:1;background:#2563eb">📷 Kamera</button>'+
+          '<button type="button" id="hfOntOldGal" class="swal2-deny swal2-styled" style="flex:1;background:#64748b">🖼️ Galeri</button>'+
+        '</div>'+
+        '<div id="hfOntOldName" style="margin-top:10px;font-size:12px;color:#087a4d;font-weight:700;min-height:18px"></div>',
+      showCancelButton:true,
+      confirmButtonText:'Lanjut',
+      cancelButtonText:'Lewati',
+      confirmButtonColor:'#047857',
+      allowOutsideClick:false,
+      didOpen:()=>{
+        const setFile=(f)=>{
+          if(!f) return;
+          chosen=f;
+          try{ if(previewUrl) URL.revokeObjectURL(previewUrl); }catch(_){}
+          previewUrl=URL.createObjectURL(f);
+          const wrap=document.getElementById('hfOntOldPreview');
+          const img=document.getElementById('hfOntOldImg');
+          const name=document.getElementById('hfOntOldName');
+          if(img) img.src=previewUrl;
+          if(wrap) wrap.style.display='block';
+          if(name) name.textContent='✓ '+((f.name||'foto')+' · '+Math.round((f.size||0)/1024)+' KB');
+        };
+        document.getElementById('hfOntOldCam')?.addEventListener('click',async(e)=>{
+          e.preventDefault();
+          const f=await pickImageFile({camera:true});
+          setFile(f);
+        });
+        document.getElementById('hfOntOldGal')?.addEventListener('click',async(e)=>{
+          e.preventDefault();
+          const f=await pickImageFile({camera:false});
+          setFile(f);
+        });
+      },
+      willClose:()=>{ try{ if(previewUrl) URL.revokeObjectURL(previewUrl); }catch(_){} }
+    }).then(res=>{
+      if(res.isConfirmed && chosen) resolve(chosen);
+      else resolve(null);
+    });
+  });
+}
 
 async function getAllWORows(){
   if(!currentUser||!supabaseClient)return [];
@@ -453,10 +579,8 @@ function payrollMonthLabel(p) {
 function initPayrollPeriodPicker() { /* Pemilih periode di Beranda dihapus; periode berjalan dipilih otomatis. */ }
 function changePayrollPeriod(value) { /* Kompatibilitas untuk kode lama; riwayat diakses dari tab Akun. */ }
 function woRateForRow(r) {
-  const dt=dateKey(r.date);
-  // Tarif lama tetap berlaku untuk WO 26–31 Oktober; tarif baru mulai 1 November 2026.
-  if(dt && dt < '2026-11-01') return 70000;
-  return Number(payrollSettings.wo_rate)||20000;
+  // Samakan dengan nominal yang disimpan ke DB (70rb sebelum 1 Nov 2026).
+  return getNominalForDate(r?.date);
 }
 function calculateWOPay(rows) { return (rows||[]).reduce((sum,r)=>sum+woRateForRow(r),0); }
 
@@ -1023,11 +1147,15 @@ function showWODetail(key){
       '<div class="detailItem"><div class="detailLabel">JANJI BAYAR</div><div class="detailValue">'+escapeHtml(row.utang_due_date||'—')+'</div></div>'+
       '<div class="detailItem"><div class="detailLabel">LINK GOOGLE MAPS / TIKOR</div><div class="detailValue">'+(row.maps_url?'<a href="'+escapeHtml(mapsHrefForRekap(row.maps_url))+'" target="_blank" rel="noopener noreferrer">🗺️ Buka lokasi</a>':'Belum diisi')+'</div></div>'+
       '<div class="detailItem"><div class="detailLabel">STATUS</div><div class="detailValue">✓ '+escapeHtml(row.status||'DONE')+'</div></div>'+
+      '<div class="detailItem" style="grid-column:1/-1"><div class="detailLabel">FOTO ONT LAMA (bukti alat di customer)</div><div class="detailValue">'+(row.ont_old_photo_url
+        ? '<a href="'+escapeHtml(row.ont_old_photo_url)+'" target="_blank" rel="noopener noreferrer"><img src="'+escapeHtml(row.ont_old_photo_url)+'" alt="ONT lama" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid #eadfc9;margin-top:6px;display:block;object-fit:contain;background:#111"/></a>'
+        : 'Belum ada foto')+'</div></div>'+
     '</div>',
     confirmButtonText:'Tutup',
     showDenyButton:true,
     denyButtonText:'✏️ Edit',
-    denyButtonColor:'#f3a500'
+    denyButtonColor:'#f3a500',
+    width:'min(92vw,520px)'
   }).then(res=>{ if(res.isDenied) editWORow(key); });
 }
 
@@ -1050,12 +1178,33 @@ async function editWORow(key){
       <div class="hfEditField"><label>NAMA SALES</label><input id="swalWoSalesNote" class="swal2-input" placeholder="Nama sales" value="${escapeHtml(row.sales_note||'')}"></div>
       <div class="hfEditField"><label>TANGGAL JANJI BAYAR</label><input id="swalWoDue" class="swal2-input" type="date" value="${escapeHtml(row.utang_due_date||'')}"></div>
       <div class="hfEditField"><label>LINK GOOGLE MAPS / TIKOR WO</label><input id="swalWoMaps" class="swal2-input" type="url" placeholder="Tempel link Google Maps lokasi pelanggan" value="${escapeHtml(row.maps_url||'')}"><small style="display:block;color:#707784;margin:6px 2px 0">Tempel link pin lokasi yang benar dari Google Maps. Link ini bisa diedit kapan saja.</small></div>
+      <div class="hfEditField"><label>FOTO ONT LAMA (bukti alat di customer)</label>
+        ${row.ont_old_photo_url?'<a href="'+escapeHtml(row.ont_old_photo_url)+'" target="_blank" rel="noopener" style="display:block;margin:6px 0"><img src="'+escapeHtml(row.ont_old_photo_url)+'" alt="ONT lama" style="max-width:100%;max-height:120px;border-radius:8px;border:1px solid #eadfc9;object-fit:contain;background:#111"/></a>':''}
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button type="button" id="swalWoPhotoCam" class="secondary" style="flex:1;min-height:40px">📷 Kamera</button>
+          <button type="button" id="swalWoPhotoGal" class="secondary" style="flex:1;min-height:40px">🖼️ Galeri</button>
+        </div>
+        <div id="swalWoPhotoStatus" style="font-size:12px;margin-top:6px;color:#087a4d;font-weight:700">${row.ont_old_photo_url?'Foto sudah ada — pilih baru untuk ganti.':'Belum ada foto.'}</div>
+        <input type="hidden" id="swalWoPhotoDirty" value="0">
+      </div>
     </div>`,
     showCancelButton:true,
     confirmButtonText:'💾 Simpan',
     cancelButtonText:'Batal',
     focusConfirm:false,
     customClass:{popup:'hfSwalPopup',htmlContainer:'hfSwalHtml'},
+    didOpen:()=>{
+      window.__hfEditPhotoFile=null;
+      const mark=(f)=>{
+        window.__hfEditPhotoFile=f||null;
+        const st=document.getElementById('swalWoPhotoStatus');
+        const dirty=document.getElementById('swalWoPhotoDirty');
+        if(dirty) dirty.value=f?'1':'0';
+        if(st) st.textContent=f?('✓ Siap upload · '+Math.round((f.size||0)/1024)+' KB'):(row.ont_old_photo_url?'Foto sudah ada — pilih baru untuk ganti.':'Belum ada foto.');
+      };
+      document.getElementById('swalWoPhotoCam')?.addEventListener('click',async(e)=>{e.preventDefault();mark(await pickImageFile({camera:true}));});
+      document.getElementById('swalWoPhotoGal')?.addEventListener('click',async(e)=>{e.preventDefault();mark(await pickImageFile({camera:false}));});
+    },
     preConfirm:()=>{
       const name=(document.getElementById('swalWoName')?.value||'').trim();
       const dateIso=(document.getElementById('swalWoDate')?.value||'').trim();
@@ -1072,13 +1221,22 @@ async function editWORow(key){
       if(!dateIso||!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)){Swal.showValidationMessage('Tanggal DONE tidak valid.');return false;}
       if(!Number.isFinite(nominal)||nominal<0){Swal.showValidationMessage('Nominal tidak valid.');return false;}
       if(utang>0&&!dueDate){Swal.showValidationMessage('Isi tanggal janji bayar untuk utang sales.');return false;}
-      return {name,dateIso,woType,sn,precone,nominal:Math.round(nominal),utang,salesNote,dueDate:dueDate||null,mapsUrl};
+      return {name,dateIso,woType,sn,precone,nominal:Math.round(nominal),utang,salesNote,dueDate:dueDate||null,mapsUrl,photoFile:window.__hfEditPhotoFile||null};
     }
   });
   if(!result.isConfirmed||!result.value)return;
   const v=result.value;
   try{
     if(!currentUser||!supabaseClient||!row.remote_id)throw new Error('Data WO tidak memiliki ID database.');
+    let photoUrl=row.ont_old_photo_url||null;
+    if(v.photoFile){
+      try{
+        photoUrl=await uploadOntOldPhoto(v.photoFile,{customerId:row.id,dateIso:v.dateIso});
+      }catch(upErr){
+        console.warn('upload edit photo',upErr);
+        swalNotice('Foto gagal diunggah',upErr.message||String(upErr),'warning');
+      }
+    }
     const updatePayload={
       customer_name:v.name,
       tanggal_done:v.dateIso,
@@ -1089,20 +1247,26 @@ async function editWORow(key){
       utang_sales:v.utang,
       sales_note:v.salesNote,
       utang_due_date:v.dueDate,
-      maps_url:v.mapsUrl||null
+      maps_url:v.mapsUrl||null,
+      ont_old_photo_url:photoUrl||null
     };
     let {error}=await supabaseClient.from('wo').update(updatePayload).eq('id',row.remote_id).eq('user_id',currentUser.id);
+    if(error && /ont_old_photo_url/i.test(String(error.message||''))){
+      const withoutPhoto={...updatePayload};delete withoutPhoto.ont_old_photo_url;
+      const retryPhoto=await supabaseClient.from('wo').update(withoutPhoto).eq('id',row.remote_id).eq('user_id',currentUser.id);
+      if(retryPhoto.error) error=retryPhoto.error; else { error=null; swalNotice('Data tersimpan, kolom foto belum ada','Jalankan SQL migrasi ont_old_photo_url + bucket Storage.','warning'); }
+    }
     if(error && /maps_url/i.test(String(error.message||''))){
       const withoutMaps={...updatePayload};delete withoutMaps.maps_url;
       const retryMaps=await supabaseClient.from('wo').update(withoutMaps).eq('id',row.remote_id).eq('user_id',currentUser.id);
       if(retryMaps.error) error=retryMaps.error; else { error=null; row.maps_url=v.mapsUrl||''; swalNotice('Data lain tersimpan, link Maps belum tersimpan','Jalankan SQL migrasi maps_url di Supabase supaya link lokasi bisa disimpan.','warning'); }
     }
     if(error && isMissingColumnError(error)){
-      const {wo_type,utang_sales,sales_note,utang_due_date,...legacy}=updatePayload;
+      const {wo_type,utang_sales,sales_note,utang_due_date,ont_old_photo_url,...legacy}=updatePayload;
       const retry=await supabaseClient.from('wo').update(legacy).eq('id',row.remote_id).eq('user_id',currentUser.id);
       error=retry.error;
       if(!error){
-        swalNotice('Sebagian tersimpan','Kolom utang/RC belum ada di database. Jalankan SQL migrasi.','warning');
+        swalNotice('Sebagian tersimpan','Kolom utang/RC/foto belum ada di database. Jalankan SQL migrasi.','warning');
       }
     }
     if(error)throw error;
@@ -3926,7 +4090,7 @@ function collectReportFormData(row){
     username:reportFormVal('hfUsername'), password:reportFormVal('hfPassword')
   };
   return {
-    parsed:{id:customerId,name:displayName,date:fields.hariTgl,sn:gsn,precone:precone||'0',nominal:getTariff()},
+    parsed:{id:customerId,name:displayName,date:fields.hariTgl,sn:gsn,precone:precone||'0',nominal:getNominalForDate(fields.hariTgl)},
     reportText:buildInstallReportText(fields),
     fields
   };
@@ -4278,7 +4442,7 @@ function parseReportTextToFormResult(text, row){
       date:hariTgl,
       sn:String(gsn||'').trim(),
       precone:String(precone||'0').replace(',','.'),
-      nominal:getTariff()
+      nominal:getNominalForDate(hariTgl)
     },
     reportText:t,
     fields:{gsn, mac, dsn, precone, hariTgl}
@@ -4356,22 +4520,42 @@ async function finalizeMappingDone(key, row, formResult){
   try{
     const todayIso=localISO(new Date());
     const displayDate=parsed.date && toIsoDate(parsed.date) ? parsed.date : (parsed.date && /[A-Z]{3,}/.test(String(parsed.date)) ? parsed.date : fromIsoDate(todayIso));
+    const dateIso=toIsoDate(displayDate)||todayIso;
+
+    // Foto ONT lama (opsional) — bukti alat masih di customer
+    let ontOldPhotoUrl=null;
+    try{
+      const photoFile=await promptOntOldPhoto({name:displayName,customerId:finalId});
+      if(photoFile){
+        swalToast('Mengunggah foto ONT lama...','info');
+        ontOldPhotoUrl=await uploadOntOldPhoto(photoFile,{customerId:finalId,dateIso});
+      }
+    }catch(photoErr){
+      console.warn('Foto ONT lama',photoErr);
+      swalToast('Foto gagal diunggah: '+(photoErr.message||photoErr)+' — WO tetap disimpan','warning');
+    }
+
     const payload=[{
       id:finalId, name:parsed.name||displayName, date:displayDate,
-      precone:String(parsed.precone||'0'), nominal:Number(parsed.nominal)||getTariff(),
+      precone:String(parsed.precone||'0'), nominal:Number(parsed.nominal)||getNominalForDate(displayDate),
       sn:String(parsed.sn||'').trim(), status:'DONE',
-      maps_url:cleanMapsUrl(row.mapsUrl||row.maps_url||'')||null
+      maps_url:cleanMapsUrl(row.mapsUrl||row.maps_url||'')||null,
+      ont_old_photo_url:ontOldPhotoUrl
     }];
     const sync=await syncRowsToSupabase(payload);
-    // Kalau WO dengan ID + tanggal ini sudah ada, tetap sinkronkan link Maps-nya.
-    // Ini penting agar menekan DONE lagi tidak membuat link lokasi tertinggal.
-    if(sync.skipped>0 && payload[0].maps_url){
-      const {error:mapsSyncError}=await supabaseClient.from('wo')
-        .update({maps_url:payload[0].maps_url})
-        .eq('user_id',currentUser.id)
-        .eq('customer_id',finalId)
-        .eq('tanggal_done',toIsoDate(displayDate));
-      if(mapsSyncError) throw mapsSyncError;
+    // Kalau WO dengan ID + tanggal ini sudah ada, tetap sinkronkan link Maps + foto.
+    if(sync.skipped>0){
+      const patch={};
+      if(payload[0].maps_url) patch.maps_url=payload[0].maps_url;
+      if(payload[0].ont_old_photo_url) patch.ont_old_photo_url=payload[0].ont_old_photo_url;
+      if(Object.keys(patch).length){
+        const {error:patchErr}=await supabaseClient.from('wo')
+          .update(patch)
+          .eq('user_id',currentUser.id)
+          .eq('customer_id',finalId)
+          .eq('tanggal_done',dateIso);
+        if(patchErr && !isMissingColumnError(patchErr)) throw patchErr;
+      }
     }
     if(sync.saved>0 || sync.skipped>0){
       await mappingUpdateCloudStatus(key,'done');
@@ -4380,6 +4564,7 @@ async function finalizeMappingDone(key, row, formResult){
       const meta=[finalId];
       if(payload[0].sn) meta.push('SN '+payload[0].sn);
       if(Number(payload[0].precone)>0) meta.push(payload[0].precone+'m');
+      if(ontOldPhotoUrl) meta.push('📷 foto');
       swalToast(sync.saved>0?('🏁 DONE · '+meta.join(' · ')):'WO '+finalId+' sudah ada di database',sync.saved>0?'success':'info');
       try{ await loadDatabase(); }catch(e){}
     }else{
