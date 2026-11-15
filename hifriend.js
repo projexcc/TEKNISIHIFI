@@ -1246,7 +1246,13 @@ async function editWORow(key){
       if(!dateIso||!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)){Swal.showValidationMessage('Tanggal DONE tidak valid.');return false;}
       if(!Number.isFinite(nominal)||nominal<0){Swal.showValidationMessage('Nominal tidak valid.');return false;}
       if(utang>0&&!dueDate){Swal.showValidationMessage('Isi tanggal janji bayar untuk utang sales.');return false;}
-      return {name,dateIso,woType,sn,precone,nominal:Math.round(nominal),utang,salesNote,dueDate:dueDate||null,mapsUrl};
+      // Pertahankan foto alat lama yang sudah ada / baru diambil di form edit.
+      const photoUrl=String(row._rcOldPhotoUrl||row.ont_old_photo_url||'').trim()||null;
+      if(woType==='RC' && !photoUrl){
+        Swal.showValidationMessage('WO RC wajib punya foto alat lama. Ambil lewat Kamera/Galeri dulu.');
+        return false;
+      }
+      return {name,dateIso,woType,sn,precone,nominal:Math.round(nominal),utang,salesNote,dueDate:dueDate||null,mapsUrl,ont_old_photo_url:photoUrl};
     }
   });
   if(!result.isConfirmed||!result.value)return;
@@ -1264,8 +1270,14 @@ async function editWORow(key){
       sales_note:v.salesNote,
       utang_due_date:v.dueDate,
       maps_url:v.mapsUrl||null,
-      ont_old_photo_url:v.ont_old_photo_url||null
+      // Jangan kirim null kalau foto sudah ada — itu yang bikin foto hilang setelah edit.
+      ont_old_photo_url:v.ont_old_photo_url || String(row.ont_old_photo_url||row._rcOldPhotoUrl||'').trim() || null
     };
+    // Kalau field foto kosong dan sebelumnya juga kosong, biarkan null.
+    // Kalau sebelumnya ada foto tapi value kosong, pertahankan foto lama.
+    if(!updatePayload.ont_old_photo_url && row.ont_old_photo_url){
+      updatePayload.ont_old_photo_url=row.ont_old_photo_url;
+    }
     let {error}=await supabaseClient.from('wo').update(updatePayload).eq('id',row.remote_id).eq('user_id',currentUser.id);
     if(error && /ont_old_photo_url/i.test(String(error.message||''))){
       const withoutPhoto={...updatePayload};delete withoutPhoto.ont_old_photo_url;
